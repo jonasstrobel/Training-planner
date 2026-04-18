@@ -41,7 +41,16 @@ export async function POST(req: NextRequest) {
     take: 30
   });
 
-  const context = buildReplanContext(plan, currentWeekNumber, activities);
+  const context = buildReplanContext(
+    {
+      name: plan.name,
+      raceDate: plan.raceDate,
+      raceDistance: plan.raceDistance,
+      currentVersion: plan.currentVersion
+    },
+    currentWeekNumber,
+    activities
+  );
 
   const toolResults: ToolResult[] = [];
   const userKickoff = `I just synced ${imported} new Garmin activities. Please review how the past week(s) went vs the plan, then call replan_future to update week ${currentWeekNumber} onwards. Include a clear rationale.`;
