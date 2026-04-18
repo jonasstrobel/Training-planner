@@ -214,7 +214,79 @@ async function main() {
     });
 
     console.log(`Seeded demo plan ${plan.id}.`);
+
+    const existingActivity = await tx.activity.findFirst();
+    if (!existingActivity) {
+      const demoActivities = buildDemoActivities(now);
+      await tx.activity.createMany({
+        data: demoActivities.map((a) => ({
+          planId: plan.id,
+          garminActivityId: null,
+          source: "UPLOAD",
+          startedAt: a.startedAt,
+          discipline: a.discipline,
+          durationMin: a.durationMin,
+          distanceKm: a.distanceKm,
+          avgHr: a.avgHr ?? null,
+          maxHr: null,
+          avgPowerWatts: null,
+          trainingLoad: null,
+          rawJson: null
+        }))
+      });
+      console.log(`Seeded ${demoActivities.length} demo activities.`);
+    }
   });
+}
+
+type DemoActivity = {
+  startedAt: Date;
+  discipline: "SWIM" | "BIKE" | "RUN";
+  durationMin: number;
+  distanceKm: number;
+  avgHr?: number;
+};
+
+function buildDemoActivities(now: Date): DemoActivity[] {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const template: Array<{
+    dayOffset: number;
+    discipline: DemoActivity["discipline"];
+    durationMin: number;
+    distanceKm: number;
+    avgHr: number;
+  }> = [
+    { dayOffset: 0, discipline: "SWIM", durationMin: 40, distanceKm: 1.8, avgHr: 135 },
+    { dayOffset: 1, discipline: "BIKE", durationMin: 75, distanceKm: 29, avgHr: 140 },
+    { dayOffset: 2, discipline: "RUN", durationMin: 45, distanceKm: 7.5, avgHr: 148 },
+    { dayOffset: 4, discipline: "SWIM", durationMin: 55, distanceKm: 2.4, avgHr: 140 },
+    { dayOffset: 5, discipline: "BIKE", durationMin: 125, distanceKm: 52, avgHr: 138 },
+    { dayOffset: 6, discipline: "RUN", durationMin: 70, distanceKm: 11.5, avgHr: 150 }
+  ];
+
+  const WEEKS_BACK = 14;
+  const out: DemoActivity[] = [];
+
+  for (let w = WEEKS_BACK; w >= 1; w -= 1) {
+    const variance = 1 + (Math.sin(w * 1.3) * 0.1);
+    for (const t of template) {
+      // Occasionally skip a session for realism
+      if ((w + t.dayOffset) % 9 === 0) continue;
+      const started = new Date(
+        now.getTime() - w * 7 * msPerDay + t.dayOffset * msPerDay
+      );
+      started.setHours(18, 0, 0, 0);
+      out.push({
+        startedAt: started,
+        discipline: t.discipline,
+        durationMin: Math.round(t.durationMin * variance),
+        distanceKm: Math.round(t.distanceKm * variance * 10) / 10,
+        avgHr: t.avgHr
+      });
+    }
+  }
+
+  return out;
 }
 
 main()
