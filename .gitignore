@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+prisma/dev.db
+prisma/dev.db-journal
+.garmin-session.json
+coverage/
+.vscode/
+.idea/

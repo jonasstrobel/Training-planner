@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AthleteProfile {
+  id                    Int       @id @default(autoincrement())
+  name                  String?
+  dob                   DateTime?
+  ftpWatts              Int?
+  runThresholdPaceSecPerKm Int?
+  swimThresholdPaceSecPer100m Int?
+  weeklyHoursAvailable  Float?
+  lastGarminSyncAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Plan {
+  id               String        @id @default(cuid())
+  name             String
+  raceDistance     String        // SPRINT | OLYMPIC | HALF_IRONMAN | IRONMAN
+  raceDate         DateTime
+  goal             String?
+  startDate        DateTime
+  currentVersionId String?       @unique
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  versions         PlanVersion[] @relation("PlanVersions")
+  currentVersion   PlanVersion?  @relation("PlanCurrentVersion", fields: [currentVersionId], references: [id])
+  messages         ChatMessage[]
+  activities       Activity[]
+}
+
+model PlanVersion {
+  id             String   @id @default(cuid())
+  planId         String
+  versionNumber  Int
+  rationale      String?
+  createdAt      DateTime @default(now())
+
+  plan           Plan     @relation("PlanVersions", fields: [planId], references: [id], onDelete: Cascade)
+  weeks          Week[]
+  currentOfPlan  Plan?    @relation("PlanCurrentVersion")
+
+  @@unique([planId, versionNumber])
+  @@index([planId])
+}
+
+model Week {
+  id            String    @id @default(cuid())
+  planVersionId String
+  weekNumber    Int
+  startDate     DateTime
+  phase         String    // BASE | BUILD | PEAK | TAPER | RACE | RECOVERY
+  focus         String?
+  notes         String?
+
+  planVersion   PlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Cascade)
+  sessions      Session[]
+
+  @@unique([planVersionId, weekNumber])
+  @@index([planVersionId])
+}
+
+model Session {
+  id               String  @id @default(cuid())
+  weekId           String
+  dayOfWeek        Int     // 0 = Monday .. 6 = Sunday
+  discipline       String  // SWIM | BIKE | RUN | BRICK | STRENGTH | MOBILITY | REST
+  title            String
+  description      String?
+  durationMin      Int
+  intensityZone    String? // Z1 | Z2 | Z3 | Z4 | Z5 | MIXED
+  targetDistanceKm Float?
+  targetLoadTss    Int?
+
+  week             Week    @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@index([weekId])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  planId         String?
+  role           String   // USER | ASSISTANT | TOOL | SYSTEM
+  content        String
+  toolCallJson   String?
+  toolResultJson String?
+  createdAt      DateTime @default(now())
+
+  plan           Plan?    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, createdAt])
+}
+
+model Activity {
+  id                String   @id @default(cuid())
+  planId            String?
+  garminActivityId  String?  @unique
+  source            String   // GARMIN | UPLOAD
+  startedAt         DateTime
+  discipline        String
+  durationMin       Int
+  distanceKm        Float?
+  avgHr             Int?
+  maxHr             Int?
+  avgPowerWatts     Int?
+  trainingLoad      Float?
+  rawJson           String?
+
+  plan              Plan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([startedAt])
+  @@index([planId])
+}
