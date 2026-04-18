@@ -63,9 +63,12 @@ export function WeekCard({
     sessionsByDay.set(s.dayOfWeek, list);
   }
 
+  const plannedMin = week.sessions.reduce((sum, s) => sum + s.durationMin, 0);
+  const completedMin = weekActivities.reduce((sum, a) => sum + a.durationMin, 0);
+
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-      <header className="flex items-baseline justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-800">
+      <header className="flex items-baseline justify-between gap-3 px-4 py-2 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold">
             Week {week.weekNumber}
@@ -83,11 +86,20 @@ export function WeekCard({
             {week.phase}
           </span>
         </div>
-        {week.focus && (
-          <span className="text-xs text-slate-500 max-w-[50%] truncate">
-            {week.focus}
-          </span>
-        )}
+        <div className="flex items-baseline gap-4 text-xs text-right min-w-0">
+          <div className="whitespace-nowrap">
+            <span className="text-slate-500">Planned</span>{" "}
+            <span className="font-semibold">{formatHours(plannedMin)}</span>
+            <span className="text-slate-400 mx-1">·</span>
+            <span className="text-slate-500">Done</span>{" "}
+            <span className="font-semibold">{formatHours(completedMin)}</span>
+          </div>
+          {week.focus && (
+            <span className="text-slate-500 truncate max-w-[40ch]">
+              {week.focus}
+            </span>
+          )}
+        </div>
       </header>
       <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800">
         {DAYS.map((label, idx) => (
@@ -118,4 +130,13 @@ export function WeekCard({
       <NotesField weekId={week.id} initialNotes={week.notes ?? ""} />
     </section>
   );
+}
+
+function formatHours(min: number) {
+  if (min <= 0) return "0h";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
