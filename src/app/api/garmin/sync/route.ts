@@ -15,6 +15,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
   }
 
+  if (!process.env.GARMIN_EMAIL || !process.env.GARMIN_PASSWORD) {
+    return NextResponse.json(
+      {
+        error:
+          "Demo mode: GARMIN_EMAIL and GARMIN_PASSWORD are not set. Add them to .env.local to enable Garmin sync."
+      },
+      { status: 400 }
+    );
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          "Demo mode: ANTHROPIC_API_KEY is not set, so the coach can't replan after sync."
+      },
+      { status: 400 }
+    );
+  }
+
   const { imported } = await syncGarminActivities(planId);
 
   const plan = await prisma.plan.findUnique({

@@ -25,6 +25,21 @@ npm run dev
 Open http://localhost:3000 and answer the intake chat to create your
 first plan.
 
+### UI-only demo mode
+
+To browse the UI without any credentials:
+
+```bash
+npm install
+npx prisma migrate dev --name init
+npm run db:seed      # inserts an 8-week Olympic demo plan
+npm run dev
+```
+
+The chat and Garmin sync endpoints return friendly "demo mode" messages
+when `ANTHROPIC_API_KEY`, `GARMIN_EMAIL`, or `GARMIN_PASSWORD` are
+missing, so nothing crashes.
+
 ## Architecture
 
 See `/root/.claude/plans/i-want-to-create-typed-dijkstra.md` (the

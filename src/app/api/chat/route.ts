@@ -28,6 +28,15 @@ export async function POST(req: NextRequest) {
     data: { planId: planId ?? null, role: "USER", content: body.message }
   });
 
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const stubText =
+      "Demo mode: no ANTHROPIC_API_KEY configured, so the coach can't reply. Set one in .env.local to enable real chat and plan generation.";
+    await prisma.chatMessage.create({
+      data: { planId: planId ?? null, role: "ASSISTANT", content: stubText }
+    });
+    return NextResponse.json({ text: stubText, toolResults: [], planId: planId ?? null });
+  }
+
   const priorMessages = await prisma.chatMessage.findMany({
     where: { planId: planId ?? null },
     orderBy: { createdAt: "asc" }
