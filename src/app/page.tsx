@@ -66,14 +66,16 @@ export default function HomePage() {
         </div>
       </header>
       <main className="flex-1 min-h-0 grid grid-cols-[minmax(320px,30%)_1fr]">
-        <ChatPanel
-          planId={activePlanId}
-          onPlanCreated={(planId) => {
-            setActivePlanId(planId);
-            plansQuery.refetch();
-          }}
-        />
-        <div className="flex flex-col min-h-0">
+        <div className="min-h-0 overflow-hidden">
+          <ChatPanel
+            planId={activePlanId}
+            onPlanCreated={(planId) => {
+              setActivePlanId(planId);
+              plansQuery.refetch();
+            }}
+          />
+        </div>
+        <div className="flex flex-col min-h-0 overflow-hidden">
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <TabButton active={tab === "plan"} onClick={() => setTab("plan")}>
               Plan
