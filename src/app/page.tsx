@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "@/components/ChatPanel";
 import { PlanView } from "@/components/PlanView";
 import { StatsView } from "@/components/StatsView";
+import { GarminConnectButton } from "@/components/GarminConnectButton";
 import { GarminSyncButton } from "@/components/GarminSyncButton";
 import { UploadActivitiesButton } from "@/components/UploadActivitiesButton";
 import { VersionPicker } from "@/components/VersionPicker";
@@ -60,15 +61,16 @@ export default function HomePage() {
               onChange={setActiveVersionId}
             />
           )}
+          <GarminConnectButton />
+          <GarminSyncButton
+            planId={activePlanId}
+            onComplete={(newVersionId) => setActiveVersionId(newVersionId)}
+          />
           <UploadActivitiesButton
             planId={activePlanId}
             onComplete={(newVersionId) => {
               if (newVersionId) setActiveVersionId(newVersionId);
             }}
-          />
-          <GarminSyncButton
-            planId={activePlanId}
-            onComplete={(newVersionId) => setActiveVersionId(newVersionId)}
           />
         </div>
       </header>

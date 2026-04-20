@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, KeyRound, LogOut } from "lucide-react";
-import { GarminConnectDialog } from "@/components/GarminConnectDialog";
+import { Loader2, RefreshCw } from "lucide-react";
 
 type Status = {
   connected: boolean;
@@ -19,7 +17,6 @@ export function GarminSyncButton({
   onComplete: (versionId: string | null) => void;
 }) {
   const qc = useQueryClient();
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   const status = useQuery({
     queryKey: ["garmin-status"],
@@ -37,18 +34,18 @@ export function GarminSyncButton({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ planId })
       });
+      const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const error = new Error(err.error ?? "Sync failed") as Error & {
+        const error = new Error(payload.error ?? "Sync failed") as Error & {
           code?: string;
         };
-        error.code = err.code;
+        error.code = payload.code;
         throw error;
       }
-      return res.json() as Promise<{
+      return payload as {
         imported: number;
         replan: { versionId: string; rationale: string } | null;
-      }>;
+      };
     },
     onSuccess: (data) => {
       onComplete(data.replan?.versionId ?? null);
@@ -63,63 +60,37 @@ export function GarminSyncButton({
     }
   });
 
-  const disconnect = useMutation({
-    mutationFn: async () => {
-      await fetch("/api/garmin/token", { method: "DELETE" });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["garmin-status"] });
-    }
-  });
-
   const connected = status.data?.connected && !status.data.expired;
+  const disabled = !planId || !connected || sync.isPending;
 
   return (
     <div className="flex items-center gap-2">
       {sync.isError && (
-        <span className="text-xs text-rose-600 max-w-[40ch] truncate">
+        <span
+          className="text-xs text-rose-600 max-w-[50ch] truncate"
+          title={(sync.error as Error).message}
+        >
           {(sync.error as Error).message}
         </span>
       )}
-      {connected ? (
-        <>
-          <button
-            type="button"
-            disabled={!planId || sync.isPending}
-            onClick={() => sync.mutate()}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-slate-50"
-            title="Fetch latest activities and replan future weeks"
-          >
-            {sync.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Import from Garmin
-          </button>
-          <button
-            type="button"
-            onClick={() => disconnect.mutate()}
-            title="Disconnect Garmin (clears saved token)"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700"
-          >
-            <LogOut className="h-3 w-3" />
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setDialogOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          <KeyRound className="h-4 w-4" />
-          Connect Garmin
-        </button>
-      )}
-      <GarminConnectDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => sync.mutate()}
+        className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-slate-50"
+        title={
+          !connected
+            ? "Connect Garmin first to enable sync"
+            : "Fetch latest activities and replan future weeks"
+        }
+      >
+        {sync.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <RefreshCw className="h-4 w-4" />
+        )}
+        Sync Garmin
+      </button>
     </div>
   );
 }

@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+type Status = {
+  connected: boolean;
+  expiresAt?: string | null;
+  expired?: boolean;
+  updatedAt?: string;
+};
 
 export function GarminConnectDialog({
   open,
@@ -12,6 +19,16 @@ export function GarminConnectDialog({
 }) {
   const qc = useQueryClient();
   const [token, setToken] = useState("");
+
+  const status = useQuery({
+    queryKey: ["garmin-status"],
+    queryFn: async (): Promise<Status> => {
+      const res = await fetch("/api/garmin/token");
+      return res.json();
+    },
+    enabled: open
+  });
+
   const save = useMutation({
     mutationFn: async (rawToken: string) => {
       const res = await fetch("/api/garmin/token", {
@@ -32,7 +49,17 @@ export function GarminConnectDialog({
     }
   });
 
+  const disconnect = useMutation({
+    mutationFn: async () => {
+      await fetch("/api/garmin/token", { method: "DELETE" });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["garmin-status"] });
+    }
+  });
+
   if (!open) return null;
+  const connected = status.data?.connected && !status.data.expired;
 
   return (
     <div
@@ -43,7 +70,21 @@ export function GarminConnectDialog({
         className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-xl w-full p-5 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-semibold">Connect Garmin</h3>
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-lg font-semibold">Connect Garmin</h3>
+          {status.data && (
+            <span className="text-xs text-slate-500">
+              Status:{" "}
+              {connected ? (
+                <span className="text-emerald-600 font-medium">connected</span>
+              ) : status.data.connected && status.data.expired ? (
+                <span className="text-amber-600 font-medium">token expired</span>
+              ) : (
+                <span className="text-slate-500">not connected</span>
+              )}
+            </span>
+          )}
+        </div>
         <p className="text-sm text-slate-600 dark:text-slate-300">
           Paste your Garmin Connect OAuth bearer token below. Your browser
           already has one — we just need a copy so the server can call the
@@ -84,22 +125,36 @@ export function GarminConnectDialog({
         {save.isError && (
           <p className="text-xs text-rose-600">{(save.error as Error).message}</p>
         )}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!token.trim() || save.isPending}
-            onClick={() => save.mutate(token.trim())}
-            className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-          >
-            {save.isPending ? "Saving…" : "Save token"}
-          </button>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            {status.data?.connected && (
+              <button
+                type="button"
+                onClick={() => disconnect.mutate()}
+                disabled={disconnect.isPending}
+                className="text-sm text-slate-500 hover:text-rose-600 disabled:opacity-50"
+              >
+                {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!token.trim() || save.isPending}
+              onClick={() => save.mutate(token.trim())}
+              className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            >
+              {save.isPending ? "Saving…" : "Save token"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
