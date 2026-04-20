@@ -25,6 +25,22 @@ npm run dev
 Open http://localhost:3000 and answer the intake chat to create your
 first plan.
 
+### Uploading activities without Garmin credentials
+
+If you can't use the Garmin password login (e.g. enforced 2FA):
+
+1. In Garmin Connect, open an activity.
+2. Click the gear icon and choose **Export Original** to download the
+   `.fit` file. For bulk export, select multiple activities in the
+   Activities list and use **Export**.
+3. In the app, click **Upload FIT files** in the top bar and choose the
+   file(s). The app parses them, stores the activities, and (if
+   `ANTHROPIC_API_KEY` is set) triggers the same replan flow with a
+   rationale posted to chat.
+
+Uploaded activities are deduplicated by the FIT file's internal
+identifier, so uploading the same file twice is safe.
+
 ### UI-only demo mode
 
 To browse the UI without any credentials:

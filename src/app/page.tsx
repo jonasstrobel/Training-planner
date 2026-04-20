@@ -6,6 +6,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { PlanView } from "@/components/PlanView";
 import { StatsView } from "@/components/StatsView";
 import { GarminSyncButton } from "@/components/GarminSyncButton";
+import { UploadActivitiesButton } from "@/components/UploadActivitiesButton";
 import { VersionPicker } from "@/components/VersionPicker";
 import { cn } from "@/lib/cn";
 
@@ -59,6 +60,12 @@ export default function HomePage() {
               onChange={setActiveVersionId}
             />
           )}
+          <UploadActivitiesButton
+            planId={activePlanId}
+            onComplete={(newVersionId) => {
+              if (newVersionId) setActiveVersionId(newVersionId);
+            }}
+          />
           <GarminSyncButton
             planId={activePlanId}
             onComplete={(newVersionId) => setActiveVersionId(newVersionId)}
