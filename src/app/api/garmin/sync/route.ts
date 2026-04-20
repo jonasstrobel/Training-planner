@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GarminAuthError, hasGarminCredential, syncGarminActivities } from "@/lib/garmin";
+import { syncGarminActivities } from "@/lib/garmin";
+import { SidecarAuthError, SidecarDownError } from "@/lib/garmin-sidecar";
 import { replanAfterActivities } from "@/lib/replan";
 
 export const runtime = "nodejs";
@@ -9,17 +10,6 @@ export async function POST(req: NextRequest) {
   const planId = body.planId;
   if (!planId) {
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
-  }
-
-  if (!(await hasGarminCredential())) {
-    return NextResponse.json(
-      {
-        error:
-          "No Garmin token saved. Click Connect Garmin to paste an OAuth bearer token.",
-        code: "NOT_CONNECTED"
-      },
-      { status: 400 }
-    );
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
@@ -38,14 +28,20 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ imported, text: outcome.text, replan: outcome.replan });
   } catch (err) {
-    if (err instanceof GarminAuthError) {
+    if (err instanceof SidecarAuthError) {
       return NextResponse.json(
         {
           error:
-            "Garmin token rejected (likely expired). Click Connect Garmin to paste a fresh token.",
-          code: "TOKEN_INVALID"
+            "Garmin session expired. Click Connect Garmin to sign in again.",
+          code: "NOT_CONNECTED"
         },
         { status: 401 }
+      );
+    }
+    if (err instanceof SidecarDownError) {
+      return NextResponse.json(
+        { error: err.message, code: "SIDECAR_DOWN" },
+        { status: 503 }
       );
     }
     throw err;

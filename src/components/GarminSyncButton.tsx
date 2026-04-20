@@ -3,11 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 
-type Status = {
-  connected: boolean;
-  expiresAt?: string | null;
-  expired?: boolean;
-};
+type Status = { connected: boolean; name?: string; sidecar?: string };
 
 export function GarminSyncButton({
   planId,
@@ -21,7 +17,7 @@ export function GarminSyncButton({
   const status = useQuery({
     queryKey: ["garmin-status"],
     queryFn: async (): Promise<Status> => {
-      const res = await fetch("/api/garmin/token");
+      const res = await fetch("/api/garmin/status");
       return res.json();
     }
   });
@@ -60,7 +56,7 @@ export function GarminSyncButton({
     }
   });
 
-  const connected = status.data?.connected && !status.data.expired;
+  const connected = Boolean(status.data?.connected);
   const disabled = !planId || !connected || sync.isPending;
 
   return (

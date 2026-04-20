@@ -1,14 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 type Status = {
   connected: boolean;
-  expiresAt?: string | null;
-  expired?: boolean;
-  updatedAt?: string;
+  name?: string;
+  sidecar?: string;
+  error?: string;
 };
+
+type LoginResult =
+  | { status: "logged_in" }
+  | { status: "mfa_required" }
+  | { status: "error"; error: string; code?: string };
+
+type Step = "login" | "mfa" | "done";
 
 export function GarminConnectDialog({
   open,
@@ -18,40 +25,69 @@ export function GarminConnectDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [token, setToken] = useState("");
+  const [step, setStep] = useState<Step>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
 
   const status = useQuery({
     queryKey: ["garmin-status"],
     queryFn: async (): Promise<Status> => {
-      const res = await fetch("/api/garmin/token");
+      const res = await fetch("/api/garmin/status");
       return res.json();
     },
     enabled: open
   });
 
-  const save = useMutation({
-    mutationFn: async (rawToken: string) => {
-      const res = await fetch("/api/garmin/token", {
+  useEffect(() => {
+    if (open) {
+      setStep("login");
+      setCode("");
+    }
+  }, [open]);
+
+  const login = useMutation({
+    mutationFn: async (): Promise<LoginResult> => {
+      const res = await fetch("/api/garmin/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: rawToken })
+        body: JSON.stringify({ email, password })
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to save token");
-      }
       return res.json();
     },
-    onSuccess: () => {
-      setToken("");
-      qc.invalidateQueries({ queryKey: ["garmin-status"] });
-      onClose();
+    onSuccess: (result) => {
+      if (result.status === "logged_in") {
+        setStep("done");
+        setPassword("");
+        qc.invalidateQueries({ queryKey: ["garmin-status"] });
+      } else if (result.status === "mfa_required") {
+        setStep("mfa");
+      }
+    }
+  });
+
+  const mfa = useMutation({
+    mutationFn: async (): Promise<LoginResult> => {
+      const res = await fetch("/api/garmin/mfa", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code })
+      });
+      return res.json();
+    },
+    onSuccess: (result) => {
+      if (result.status === "logged_in") {
+        setStep("done");
+        setPassword("");
+        setCode("");
+        qc.invalidateQueries({ queryKey: ["garmin-status"] });
+      }
     }
   });
 
   const disconnect = useMutation({
     mutationFn: async () => {
-      await fetch("/api/garmin/token", { method: "DELETE" });
+      await fetch("/api/garmin/logout", { method: "POST" });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["garmin-status"] });
@@ -59,7 +95,11 @@ export function GarminConnectDialog({
   });
 
   if (!open) return null;
-  const connected = status.data?.connected && !status.data.expired;
+
+  const sidecarDown = status.data?.sidecar === "down";
+  const loginError =
+    login.data && login.data.status === "error" ? login.data.error : null;
+  const mfaError = mfa.data && mfa.data.status === "error" ? mfa.data.error : null;
 
   return (
     <div
@@ -67,95 +107,157 @@ export function GarminConnectDialog({
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-xl w-full p-5 space-y-3"
+        className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-md w-full p-5 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-baseline justify-between">
           <h3 className="text-lg font-semibold">Connect Garmin</h3>
           {status.data && (
             <span className="text-xs text-slate-500">
-              Status:{" "}
-              {connected ? (
-                <span className="text-emerald-600 font-medium">connected</span>
-              ) : status.data.connected && status.data.expired ? (
-                <span className="text-amber-600 font-medium">token expired</span>
+              {status.data.connected ? (
+                <span className="text-emerald-600 font-medium">
+                  connected{status.data.name ? ` · ${status.data.name}` : ""}
+                </span>
+              ) : sidecarDown ? (
+                <span className="text-rose-600 font-medium">sidecar offline</span>
               ) : (
-                <span className="text-slate-500">not connected</span>
+                <span>not connected</span>
               )}
             </span>
           )}
         </div>
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          Paste your Garmin Connect OAuth bearer token below. Your browser
-          already has one — we just need a copy so the server can call the
-          Garmin API on your behalf. The token stays on your machine in the
-          local SQLite database.
-        </p>
-        <details className="text-sm">
-          <summary className="cursor-pointer font-medium">
-            How to grab the token (60 seconds)
-          </summary>
-          <ol className="list-decimal pl-5 space-y-1 mt-2 text-slate-700 dark:text-slate-300">
-            <li>
-              Open <code>https://connect.garmin.com</code> in your regular
-              browser and sign in (MFA runs as usual).
-            </li>
-            <li>Open DevTools → <strong>Network</strong> tab.</li>
-            <li>Reload the page.</li>
-            <li>
-              In the filter, type <code>connectapi</code>.
-            </li>
-            <li>Click any request in the list.</li>
-            <li>
-              Under <strong>Headers → Request Headers</strong>, find{" "}
-              <code>Authorization: Bearer eyJ…</code> and copy the value{" "}
-              <em>after</em> the word <code>Bearer</code>.
-            </li>
-            <li>Paste it below and click Save.</li>
-          </ol>
-        </details>
-        <textarea
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          rows={6}
-          placeholder="eyJraWQiOi… or the full Authorization value"
-          className="w-full resize-none rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-          spellCheck={false}
-        />
-        {save.isError && (
-          <p className="text-xs text-rose-600">{(save.error as Error).message}</p>
+
+        {sidecarDown && (
+          <div className="text-xs text-rose-600 border border-rose-200 bg-rose-50 dark:bg-rose-900/20 rounded p-2">
+            The Python Garmin sidecar is not running. Start it in a second
+            terminal:
+            <pre className="mt-1 whitespace-pre-wrap">
+              cd python-sidecar{"\n"}source .venv/bin/activate{"\n"}uvicorn app:app --port 7321
+            </pre>
+          </div>
         )}
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            {status.data?.connected && (
+
+        {step === "login" && (
+          <form
+            className="space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (email && password && !login.isPending) login.mutate();
+            }}
+          >
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Enter your Garmin Connect credentials. They&apos;re sent to the
+              local Python sidecar only, which authenticates with Garmin and
+              caches tokens locally.
+            </p>
+            <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5"
+            />
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5"
+            />
+            {loginError && <p className="text-xs text-rose-600">{loginError}</p>}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <div>
+                {status.data?.connected && (
+                  <button
+                    type="button"
+                    onClick={() => disconnect.mutate()}
+                    disabled={disconnect.isPending}
+                    className="text-sm text-slate-500 hover:text-rose-600 disabled:opacity-50"
+                  >
+                    {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!email || !password || login.isPending}
+                  className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+                >
+                  {login.isPending ? "Signing in…" : "Sign in"}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {step === "mfa" && (
+          <form
+            className="space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (code && !mfa.isPending) mfa.mutate();
+            }}
+          >
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Garmin sent a six-digit verification code. Enter it below.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              placeholder="123456"
+              className="w-full text-center font-mono text-lg tracking-[0.3em] rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-2"
+              autoFocus
+            />
+            {mfaError && <p className="text-xs text-rose-600">{mfaError}</p>}
+            <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => disconnect.mutate()}
-                disabled={disconnect.isPending}
-                className="text-sm text-slate-500 hover:text-rose-600 disabled:opacity-50"
+                onClick={() => setStep("login")}
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
               >
-                {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
+                Back
               </button>
-            )}
+              <button
+                type="submit"
+                disabled={!code || mfa.isPending}
+                className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+              >
+                {mfa.isPending ? "Verifying…" : "Verify"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === "done" && (
+          <div className="space-y-3">
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">
+              Connected. You can close this dialog and click Sync Garmin when
+              you want to pull new activities.
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium"
+              >
+                Done
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!token.trim() || save.isPending}
-              onClick={() => save.mutate(token.trim())}
-              className="rounded-md bg-brand-600 text-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-            >
-              {save.isPending ? "Saving…" : "Save token"}
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

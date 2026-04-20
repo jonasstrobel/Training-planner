@@ -5,23 +5,19 @@ import { useQuery } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { GarminConnectDialog } from "@/components/GarminConnectDialog";
 
-type Status = {
-  connected: boolean;
-  expiresAt?: string | null;
-  expired?: boolean;
-};
+type Status = { connected: boolean; name?: string; sidecar?: string };
 
 export function GarminConnectButton() {
   const [open, setOpen] = useState(false);
   const { data } = useQuery({
     queryKey: ["garmin-status"],
     queryFn: async (): Promise<Status> => {
-      const res = await fetch("/api/garmin/token");
+      const res = await fetch("/api/garmin/status");
       return res.json();
     }
   });
 
-  const connected = data?.connected && !data.expired;
+  const connected = Boolean(data?.connected);
 
   return (
     <>
