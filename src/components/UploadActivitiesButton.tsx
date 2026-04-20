@@ -6,9 +6,11 @@ import { Loader2, Upload } from "lucide-react";
 
 export function UploadActivitiesButton({
   planId,
+  planVersionId,
   onComplete
 }: {
   planId: string | null;
+  planVersionId: string | null;
   onComplete: (versionId: string | null) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -20,6 +22,7 @@ export function UploadActivitiesButton({
       if (!planId) throw new Error("Create a plan first");
       const form = new FormData();
       form.append("planId", planId);
+      if (planVersionId) form.append("planVersionId", planVersionId);
       Array.from(files).forEach((f) => form.append("files", f));
       const res = await fetch("/api/activities/upload", {
         method: "POST",

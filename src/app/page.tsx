@@ -64,10 +64,12 @@ export default function HomePage() {
           <GarminConnectButton />
           <GarminSyncButton
             planId={activePlanId}
+            planVersionId={activeVersionId}
             onComplete={(newVersionId) => setActiveVersionId(newVersionId)}
           />
           <UploadActivitiesButton
             planId={activePlanId}
+            planVersionId={activeVersionId}
             onComplete={(newVersionId) => {
               if (newVersionId) setActiveVersionId(newVersionId);
             }}
@@ -78,6 +80,7 @@ export default function HomePage() {
         <div className="min-h-0 overflow-hidden">
           <ChatPanel
             planId={activePlanId}
+            planVersionId={activeVersionId}
             onPlanCreated={(planId) => {
               setActivePlanId(planId);
               plansQuery.refetch();

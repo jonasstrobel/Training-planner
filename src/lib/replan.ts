@@ -3,6 +3,7 @@ import { anthropic, MODEL } from "@/lib/anthropic";
 import { prisma } from "@/lib/db";
 import { COACH_SYSTEM_PROMPT } from "@/lib/prompts";
 import { TOOLS, executeTool, type ToolResult } from "@/lib/planner";
+import { buildPrinciplesBlock } from "@/lib/principles";
 
 export type ReplanOutcome = {
   text: string;
@@ -14,7 +15,7 @@ const MAX_ITERATIONS = 6;
 
 export async function replanAfterActivities(
   planId: string,
-  opts: { kickoffMessage: string }
+  opts: { kickoffMessage: string; baseVersionId?: string }
 ): Promise<ReplanOutcome> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
@@ -32,8 +33,17 @@ export async function replanAfterActivities(
     throw new Error("No current plan version");
   }
 
+  const baseVersionId = opts.baseVersionId ?? plan.currentVersionId;
+  const baseVersion = baseVersionId
+    ? await prisma.planVersion.findUnique({
+        where: { id: baseVersionId },
+        include: { weeks: { include: { sessions: true } } }
+      })
+    : null;
+  const contextVersion = baseVersion ?? plan.currentVersion;
+
   const now = new Date();
-  const current = plan.currentVersion.weeks.find(
+  const current = contextVersion.weeks.find(
     (w) => w.startDate <= now && now < addDays(w.startDate, 7)
   );
   const currentWeekNumber = current?.weekNumber ?? 1;
@@ -49,7 +59,7 @@ export async function replanAfterActivities(
       name: plan.name,
       raceDate: plan.raceDate,
       raceDistance: plan.raceDistance,
-      currentVersion: plan.currentVersion
+      currentVersion: contextVersion
     },
     currentWeekNumber,
     activities
@@ -66,11 +76,16 @@ export async function replanAfterActivities(
   const toolResults: ToolResult[] = [];
   let finalText = "";
 
+  const principles = await buildPrinciplesBlock();
+  const systemBlocks = principles
+    ? [principles, { type: "text" as const, text: COACH_SYSTEM_PROMPT }]
+    : [{ type: "text" as const, text: COACH_SYSTEM_PROMPT }];
+
   for (let i = 0; i < MAX_ITERATIONS; i += 1) {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 16000,
-      system: COACH_SYSTEM_PROMPT,
+      system: systemBlocks,
       tools: TOOLS,
       messages: history
     });
@@ -93,7 +108,10 @@ export async function replanAfterActivities(
 
     const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
     for (const tu of toolUses) {
-      const result = await executeTool(tu.name, tu.input, { planId });
+      const result = await executeTool(tu.name, tu.input, {
+        planId,
+        baseVersionId: baseVersionId ?? undefined
+      });
       toolResults.push(result);
       await prisma.chatMessage.create({
         data: {

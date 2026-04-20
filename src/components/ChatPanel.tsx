@@ -28,9 +28,11 @@ type AskAthletePayload = {
 
 export function ChatPanel({
   planId,
+  planVersionId,
   onPlanCreated
 }: {
   planId: string | null;
+  planVersionId: string | null;
   onPlanCreated: (id: string) => void;
 }) {
   const [input, setInput] = useState("");
@@ -52,7 +54,7 @@ export function ChatPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ planId, message })
+        body: JSON.stringify({ planId, planVersionId, message })
       });
       return res.json() as Promise<{
         text: string;

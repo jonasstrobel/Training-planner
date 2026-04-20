@@ -176,7 +176,7 @@ export type ToolResult =
 export async function executeTool(
   name: string,
   input: unknown,
-  context: { planId?: string }
+  context: { planId?: string; baseVersionId?: string }
 ): Promise<ToolResult> {
   try {
     switch (name) {
@@ -194,7 +194,9 @@ export async function executeTool(
           return { type: "error", message: "replan_future requires a planId" };
         }
         const parsed = ReplanResultSchema.parse(input);
-        const { versionId } = await writeReplan(context.planId, parsed);
+        const { versionId } = await writeReplan(context.planId, parsed, {
+          baseVersionId: context.baseVersionId
+        });
         return {
           type: "replan_future",
           planId: context.planId,
@@ -252,7 +254,8 @@ async function writeNewPlan(
 
 async function writeReplan(
   planId: string,
-  replan: ReplanResult
+  replan: ReplanResult,
+  opts: { baseVersionId?: string } = {}
 ): Promise<{ versionId: string }> {
   return prisma.$transaction(async (tx) => {
     const plan = await tx.plan.findUniqueOrThrow({
@@ -261,11 +264,18 @@ async function writeReplan(
         currentVersion: { include: { weeks: { include: { sessions: true } } } }
       }
     });
-    if (!plan.currentVersion) {
-      throw new Error("Plan has no current version");
+    const baseId = opts.baseVersionId ?? plan.currentVersionId;
+    if (!baseId) {
+      throw new Error("Plan has no base version to fork from");
+    }
+    const base = await tx.planVersion.findUnique({
+      where: { id: baseId },
+      include: { weeks: { include: { sessions: true } } }
+    });
+    if (!base) {
+      throw new Error(`Base version ${baseId} not found`);
     }
 
-    const current = plan.currentVersion;
     const firstReplanWeekNumber = Math.min(...replan.weeks.map((w) => w.weekNumber));
 
     const last = await tx.planVersion.findFirst({
@@ -278,12 +288,13 @@ async function writeReplan(
       data: {
         planId,
         versionNumber: nextVersionNumber,
-        rationale: replan.rationale
+        rationale: replan.rationale,
+        parentVersionId: base.id
       }
     });
 
     // Carry forward past weeks unchanged (including their notes)
-    const pastWeeks = current.weeks.filter(
+    const pastWeeks = base.weeks.filter(
       (w) => w.weekNumber < firstReplanWeekNumber
     );
     for (const w of pastWeeks) {
@@ -314,9 +325,9 @@ async function writeReplan(
       }
     }
 
-    // Preserve notes from prior version when re-writing future weeks
+    // Preserve notes from the base version when re-writing future weeks
     const oldNotesByWeekNumber = new Map<number, string | null>();
-    for (const w of current.weeks) {
+    for (const w of base.weeks) {
       oldNotesByWeekNumber.set(w.weekNumber, w.notes);
     }
 

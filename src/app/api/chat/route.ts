@@ -4,11 +4,13 @@ import { anthropic, MODEL } from "@/lib/anthropic";
 import { prisma } from "@/lib/db";
 import { COACH_SYSTEM_PROMPT, PLAN_CREATION_GUIDE } from "@/lib/prompts";
 import { TOOLS, executeTool, type ToolResult } from "@/lib/planner";
+import { buildPrinciplesBlock } from "@/lib/principles";
 
 export const runtime = "nodejs";
 
 type IncomingBody = {
   planId?: string;
+  planVersionId?: string;
   message: string;
   mode?: "chat" | "replan";
   replanContext?: string;
@@ -23,6 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   const planId = body.planId;
+  const planVersionId = body.planVersionId;
 
   await prisma.chatMessage.create({
     data: { planId: planId ?? null, role: "USER", content: body.message }
@@ -47,9 +50,6 @@ export async function POST(req: NextRequest) {
     if (m.role === "USER") {
       history.push({ role: "user", content: m.content });
     } else if (m.role === "ASSISTANT") {
-      // Assistant messages may have stored structured content (tool_use) but
-      // for the loop we only need the visible text; tool results are replayed
-      // through the live loop below, so we keep this simple.
       if (m.content) history.push({ role: "assistant", content: m.content });
     }
   }
@@ -59,6 +59,12 @@ export async function POST(req: NextRequest) {
       ? `\n\nReplan context:\n${body.replanContext}`
       : "";
 
+  const principlesBlock = await buildPrinciplesBlock();
+  const baseSystemText = COACH_SYSTEM_PROMPT + "\n\n" + PLAN_CREATION_GUIDE + extraSystem;
+  const systemBlocks: Anthropic.TextBlockParam[] = principlesBlock
+    ? [principlesBlock, { type: "text", text: baseSystemText }]
+    : [{ type: "text", text: baseSystemText }];
+
   const toolResults: ToolResult[] = [];
   let finalText = "";
 
@@ -66,7 +72,7 @@ export async function POST(req: NextRequest) {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 16000,
-      system: COACH_SYSTEM_PROMPT + "\n\n" + PLAN_CREATION_GUIDE + extraSystem,
+      system: systemBlocks,
       tools: TOOLS,
       messages: history
     });
@@ -91,7 +97,10 @@ export async function POST(req: NextRequest) {
 
     const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
     for (const tu of toolUses) {
-      const result = await executeTool(tu.name, tu.input, { planId });
+      const result = await executeTool(tu.name, tu.input, {
+        planId,
+        baseVersionId: planVersionId
+      });
       toolResults.push(result);
 
       await prisma.chatMessage.create({

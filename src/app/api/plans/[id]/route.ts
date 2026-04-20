@@ -15,7 +15,13 @@ export async function GET(
     include: {
       versions: {
         orderBy: { versionNumber: "desc" },
-        select: { id: true, versionNumber: true, createdAt: true, rationale: true }
+        select: {
+          id: true,
+          versionNumber: true,
+          createdAt: true,
+          rationale: true,
+          parentVersionId: true
+        }
       },
       currentVersion: true
     }

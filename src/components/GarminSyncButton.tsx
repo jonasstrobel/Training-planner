@@ -7,9 +7,11 @@ type Status = { connected: boolean; name?: string; sidecar?: string };
 
 export function GarminSyncButton({
   planId,
+  planVersionId,
   onComplete
 }: {
   planId: string | null;
+  planVersionId: string | null;
   onComplete: (versionId: string | null) => void;
 }) {
   const qc = useQueryClient();
@@ -28,7 +30,7 @@ export function GarminSyncButton({
       const res = await fetch("/api/garmin/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ planId })
+        body: JSON.stringify({ planId, planVersionId })
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {

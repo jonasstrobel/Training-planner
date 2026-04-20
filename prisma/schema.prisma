@@ -42,14 +42,18 @@ model PlanVersion {
   planId         String
   versionNumber  Int
   rationale      String?
+  parentVersionId String?
   createdAt      DateTime @default(now())
 
   plan           Plan     @relation("PlanVersions", fields: [planId], references: [id], onDelete: Cascade)
+  parent         PlanVersion?  @relation("VersionParent", fields: [parentVersionId], references: [id])
+  children       PlanVersion[] @relation("VersionParent")
   weeks          Week[]
   currentOfPlan  Plan?    @relation("PlanCurrentVersion")
 
   @@unique([planId, versionNumber])
   @@index([planId])
+  @@index([parentVersionId])
 }
 
 model Week {

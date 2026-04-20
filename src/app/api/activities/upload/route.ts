@@ -119,6 +119,9 @@ export async function POST(req: NextRequest) {
   if (typeof planId !== "string" || !planId) {
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
   }
+  const planVersionIdRaw = form.get("planVersionId");
+  const planVersionId =
+    typeof planVersionIdRaw === "string" && planVersionIdRaw ? planVersionIdRaw : undefined;
 
   const fileEntries = form.getAll("files");
   const files = fileEntries.filter((f): f is File => f instanceof File);
@@ -178,7 +181,8 @@ export async function POST(req: NextRequest) {
   let outcome: Awaited<ReturnType<typeof replanAfterActivities>> | null = null;
   if (shouldReplan) {
     outcome = await replanAfterActivities(planId, {
-      kickoffMessage: `I just uploaded ${imported} FIT file${imported === 1 ? "" : "s"} from Garmin. Please review how the recent week(s) went vs the plan, then call replan_future to update this week onwards. Include a clear rationale.`
+      kickoffMessage: `I just uploaded ${imported} FIT file${imported === 1 ? "" : "s"} from Garmin. Please review how the recent week(s) went vs the plan, then call replan_future to update this week onwards. Include a clear rationale.`,
+      baseVersionId: planVersionId
     });
   }
 
