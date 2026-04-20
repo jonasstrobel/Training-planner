@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 import { prisma } from "@/lib/db";
 import {
   AskAthleteSchema,
@@ -205,9 +206,18 @@ export async function executeTool(
         return { type: "error", message: `Unknown tool ${name}` };
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatError(err);
     return { type: "error", message };
   }
+}
+
+function formatError(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    return err.issues
+      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("; ");
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 async function writeNewPlan(

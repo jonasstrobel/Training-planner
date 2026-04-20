@@ -28,4 +28,11 @@ export const PLAN_CREATION_GUIDE = `Plan shape:
 - Respect weeklyHoursAvailable. Balance disciplines roughly as
   swim 15-25%, bike 40-55%, run 25-35%, strength/mobility 5-10%.
 - Include at least one REST day per week.
-- For BRICK sessions describe both legs.`;
+- For BRICK sessions describe both legs.
+
+Date format:
+- raceDateIso and startDateIso must be ISO 8601 strings. Either
+  YYYY-MM-DD (e.g. 2026-08-30) or YYYY-MM-DDTHH:mm:ssZ is accepted.
+- Always include every week from startDateIso to race day. Never
+  omit the weeks array; call create_plan only when you have the
+  full schedule ready.`;

@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < MAX_ITERATIONS; i += 1) {
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: 16000,
       system: COACH_SYSTEM_PROMPT + "\n\n" + PLAN_CREATION_GUIDE + extraSystem,
       tools: TOOLS,
       messages: history

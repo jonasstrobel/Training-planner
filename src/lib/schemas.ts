@@ -52,11 +52,19 @@ export const WeekSchema = z.object({
 });
 export type WeekInput = z.infer<typeof WeekSchema>;
 
+const FlexibleDateIso = z
+  .string()
+  .min(4)
+  .refine((s) => !Number.isNaN(Date.parse(s)), {
+    message: "must be an ISO 8601 date (YYYY-MM-DD or full datetime)"
+  })
+  .transform((s) => new Date(s).toISOString());
+
 export const PlanSchema = z.object({
   name: z.string().min(1).max(120),
   raceDistance: RaceDistance,
-  raceDateIso: z.string().datetime(),
-  startDateIso: z.string().datetime(),
+  raceDateIso: FlexibleDateIso,
+  startDateIso: FlexibleDateIso,
   goal: z.string().max(280).optional(),
   weeks: z.array(WeekSchema).min(1).max(52)
 });
