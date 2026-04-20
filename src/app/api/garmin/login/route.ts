@@ -24,6 +24,10 @@ export async function POST(req: NextRequest) {
         { status: 503 }
       );
     }
-    throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { status: "error", error: message },
+      { status: 500 }
+    );
   }
 }

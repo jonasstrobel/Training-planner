@@ -53,7 +53,11 @@ export function GarminConnectDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password })
       });
-      return res.json();
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error ?? `Login failed (${res.status})`);
+      }
+      return payload as LoginResult;
     },
     onSuccess: (result) => {
       if (result.status === "logged_in") {
@@ -73,7 +77,11 @@ export function GarminConnectDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code })
       });
-      return res.json();
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error ?? `MFA failed (${res.status})`);
+      }
+      return payload as LoginResult;
     },
     onSuccess: (result) => {
       if (result.status === "logged_in") {
@@ -98,8 +106,11 @@ export function GarminConnectDialog({
 
   const sidecarDown = status.data?.sidecar === "down";
   const loginError =
-    login.data && login.data.status === "error" ? login.data.error : null;
-  const mfaError = mfa.data && mfa.data.status === "error" ? mfa.data.error : null;
+    (login.error as Error | null)?.message ??
+    (login.data && login.data.status === "error" ? login.data.error : null);
+  const mfaError =
+    (mfa.error as Error | null)?.message ??
+    (mfa.data && mfa.data.status === "error" ? mfa.data.error : null);
 
   return (
     <div
