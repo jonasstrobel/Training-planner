@@ -13,6 +13,8 @@ Run locally:
 from __future__ import annotations
 
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -28,11 +30,30 @@ from garminconnect import (
 )
 
 TOKEN_DIR = Path(os.environ.get("GARMIN_TOKEN_DIR", "./garmin-tokens")).resolve()
+MFA_WAIT_SECONDS = 180
+SIGNAL_WAIT_SECONDS = 20
+JOIN_AFTER_MFA_SECONDS = 60
 
 app = FastAPI()
 
 _client: Optional[Garmin] = None
-_pending: Dict[str, Any] = {}
+_login_lock = threading.Lock()
+
+
+class _LoginSession:
+    """Holds the state for one in-flight Garmin login."""
+
+    def __init__(self) -> None:
+        self.thread: Optional[threading.Thread] = None
+        self.mfa_needed = threading.Event()
+        self.code_supplied = threading.Event()
+        self.done = threading.Event()
+        self.code: Optional[str] = None
+        self.result: Dict[str, Any] = {"status": "pending"}
+        self.client: Optional[Garmin] = None
+
+
+_session: Optional[_LoginSession] = None
 
 
 def _try_resume() -> bool:
@@ -81,61 +102,133 @@ def status() -> Dict[str, Any]:
         return {"connected": False}
 
 
-@app.post("/login")
-def login(req: LoginRequest) -> Dict[str, Any]:
-    global _client, _pending
+def _abandon_session(session: _LoginSession) -> None:
+    """Release a stale login thread so a fresh /login can proceed."""
+    if session.thread and session.thread.is_alive():
+        session.code = None
+        session.code_supplied.set()
+    session.done.set()
+
+
+def _run_login(session: _LoginSession, email: str, password: str) -> None:
+    def prompt_mfa() -> str:
+        session.mfa_needed.set()
+        if not session.code_supplied.wait(timeout=MFA_WAIT_SECONDS):
+            raise TimeoutError("MFA code was never supplied")
+        code = session.code
+        if not code:
+            raise RuntimeError("MFA prompt cancelled")
+        return code
+
     try:
         g = Garmin(
-            email=req.email,
-            password=req.password,
+            email=email,
+            password=password,
             is_cn=False,
-            return_on_mfa=True,
+            prompt_mfa=prompt_mfa,
         )
-        result1, result2 = g.login()
+        TOKEN_DIR.mkdir(parents=True, exist_ok=True)
+        g.login(str(TOKEN_DIR))
+        _ = g.get_full_name()
+        session.client = g
+        session.result = {"status": "logged_in"}
     except GarminConnectAuthenticationError as exc:
-        return {"status": "error", "error": f"Auth failed: {exc}"}
-    except GarminConnectConnectionError as exc:
-        return {"status": "error", "error": f"Garmin unreachable: {exc}"}
+        session.result = {"status": "error", "error": f"Auth failed: {exc}"}
     except GarminConnectTooManyRequestsError as exc:
-        return {"status": "error", "error": f"Rate limited: {exc}"}
+        session.result = {
+            "status": "error",
+            "error": (
+                "Garmin has rate-limited your IP. Wait 30-60 minutes before "
+                "retrying; repeated attempts reset the timer."
+            ),
+        }
+    except GarminConnectConnectionError as exc:
+        session.result = {"status": "error", "error": f"Garmin unreachable: {exc}"}
+    except TimeoutError as exc:
+        session.result = {"status": "error", "error": str(exc)}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error": str(exc)}
+        session.result = {"status": "error", "error": str(exc)}
+    finally:
+        session.done.set()
 
-    if result1 == "needs_mfa":
-        _pending["client"] = g
-        _pending["client_state"] = result2
+
+@app.post("/login")
+def login(req: LoginRequest) -> Dict[str, Any]:
+    global _session
+    with _login_lock:
+        if _session is not None:
+            _abandon_session(_session)
+        session = _LoginSession()
+        _session = session
+        session.thread = threading.Thread(
+            target=_run_login,
+            args=(session, req.email, req.password),
+            daemon=True,
+        )
+        session.thread.start()
+
+    waited = 0.0
+    tick = 0.1
+    while waited < SIGNAL_WAIT_SECONDS:
+        if session.done.is_set():
+            break
+        if session.mfa_needed.is_set():
+            break
+        time.sleep(tick)
+        waited += tick
+
+    if session.done.is_set():
+        if session.result.get("status") == "logged_in":
+            _promote(session)
+            return {"status": "logged_in"}
+        return session.result
+
+    if session.mfa_needed.is_set():
         return {"status": "mfa_required"}
 
-    TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-    g.garth.dump(str(TOKEN_DIR))
-    _client = g
-    return {"status": "logged_in"}
+    return {
+        "status": "error",
+        "error": "Timed out waiting for Garmin login response.",
+    }
 
 
 @app.post("/mfa")
 def mfa(req: MfaRequest) -> Dict[str, Any]:
-    global _client, _pending
-    g = _pending.get("client")
-    client_state = _pending.get("client_state")
-    if g is None or client_state is None:
+    global _session
+    session = _session
+    if session is None or session.thread is None:
         raise HTTPException(404, "No pending login")
-    try:
-        g.resume_login(client_state, req.code)
-    except Exception as exc:  # noqa: BLE001
-        _pending.clear()
-        return {"status": "error", "error": f"MFA failed: {exc}"}
-    TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-    g.garth.dump(str(TOKEN_DIR))
-    _client = g
-    _pending.clear()
-    return {"status": "logged_in"}
+    if session.done.is_set() and session.result.get("status") != "logged_in":
+        return session.result
+    session.code = req.code.strip()
+    session.code_supplied.set()
+    if not session.done.wait(timeout=JOIN_AFTER_MFA_SECONDS):
+        return {
+            "status": "error",
+            "error": "Garmin did not finish verifying within 60s.",
+        }
+    if session.result.get("status") == "logged_in":
+        _promote(session)
+        return {"status": "logged_in"}
+    return session.result
+
+
+def _promote(session: _LoginSession) -> None:
+    """Install a completed login session as the active client."""
+    global _client, _session
+    if session.client is None:
+        return
+    _client = session.client
+    _session = None
 
 
 @app.post("/logout")
 def logout() -> Dict[str, Any]:
-    global _client, _pending
+    global _client, _session
     _client = None
-    _pending.clear()
+    if _session is not None:
+        _abandon_session(_session)
+        _session = None
     try:
         if TOKEN_DIR.exists():
             for child in TOKEN_DIR.iterdir():
@@ -173,7 +266,6 @@ def sync(req: SyncRequest) -> Dict[str, Any]:
     try:
         activities = _client.get_activities(0, req.limit)
     except Exception as exc:  # noqa: BLE001
-        # If token got invalidated, surface as 401 so Node can reprompt
         _client = None
         raise HTTPException(401, f"Garmin call failed: {exc}")
 
