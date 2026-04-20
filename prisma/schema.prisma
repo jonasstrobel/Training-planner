@@ -119,3 +119,12 @@ model Activity {
   @@index([startedAt])
   @@index([planId])
 }
+
+model GarminCredential {
+  id          Int      @id @default(1)
+  accessToken String
+  tokenType   String   @default("Bearer")
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

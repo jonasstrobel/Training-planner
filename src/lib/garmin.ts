@@ -1,15 +1,19 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { prisma } from "@/lib/db";
 import type { Discipline } from "@/lib/schemas";
 
-const SESSION_FILE = path.join(process.cwd(), ".garmin-session.json");
+const CONNECT_API = "https://connectapi.garmin.com";
+
+export class GarminAuthError extends Error {
+  constructor(message = "Garmin token is missing or has expired") {
+    super(message);
+    this.name = "GarminAuthError";
+  }
+}
 
 type RawActivity = {
   activityId: number | string;
-  activityName?: string;
-  startTimeLocal?: string;
   startTimeGMT?: string;
+  startTimeLocal?: string;
   activityType?: { typeKey?: string };
   duration?: number; // seconds
   distance?: number; // metres
@@ -18,32 +22,6 @@ type RawActivity = {
   avgPower?: number;
   activityTrainingLoad?: number;
 };
-
-// Dynamic import to keep the heavy lib out of edge bundles
-async function getClient() {
-  const mod = await import("garmin-connect");
-  const GCClient = (mod as { GarminConnect?: new (c: unknown) => unknown }).GarminConnect;
-  if (!GCClient) throw new Error("garmin-connect module missing GarminConnect export");
-  const email = process.env.GARMIN_EMAIL;
-  const password = process.env.GARMIN_PASSWORD;
-  if (!email || !password) {
-    throw new Error("GARMIN_EMAIL and GARMIN_PASSWORD must be set");
-  }
-  const client = new GCClient({ username: email, password }) as {
-    login: (email?: string, password?: string) => Promise<void>;
-    restore: (session: unknown) => Promise<boolean>;
-    sessionJson: unknown;
-    getActivities: (start: number, limit: number) => Promise<RawActivity[]>;
-  };
-  try {
-    const cached = await fs.readFile(SESSION_FILE, "utf-8");
-    await client.restore(JSON.parse(cached));
-  } catch {
-    await client.login(email, password);
-    await fs.writeFile(SESSION_FILE, JSON.stringify(client.sessionJson), "utf-8");
-  }
-  return client;
-}
 
 function mapDiscipline(typeKey?: string): Discipline {
   const t = (typeKey ?? "").toLowerCase();
@@ -54,7 +32,44 @@ function mapDiscipline(typeKey?: string): Discipline {
   if (t.includes("strength") || t.includes("gym")) return "STRENGTH";
   if (t.includes("yoga") || t.includes("mobility") || t.includes("stretch"))
     return "MOBILITY";
-  return "RUN"; // safest generic endurance default
+  return "RUN";
+}
+
+async function loadCredential() {
+  const cred = await prisma.garminCredential.findUnique({ where: { id: 1 } });
+  if (!cred) throw new GarminAuthError("No Garmin token saved");
+  return cred;
+}
+
+async function clearCredential() {
+  await prisma.garminCredential.deleteMany({ where: { id: 1 } }).catch(() => {});
+}
+
+async function connectGet<T>(path: string): Promise<T> {
+  const cred = await loadCredential();
+  const res = await fetch(`${CONNECT_API}${path}`, {
+    headers: {
+      Authorization: `${cred.tokenType} ${cred.accessToken}`,
+      "nk": "NT",
+      "x-app-ver": "5.7.2.1",
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+  if (res.status === 401 || res.status === 403) {
+    await clearCredential();
+    throw new GarminAuthError();
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Garmin API ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return (await res.json()) as T;
+}
+
+export async function hasGarminCredential(): Promise<boolean> {
+  const cred = await prisma.garminCredential.findUnique({ where: { id: 1 } });
+  return Boolean(cred?.accessToken);
 }
 
 export async function syncGarminActivities(planId: string) {
@@ -64,12 +79,13 @@ export async function syncGarminActivities(planId: string) {
     create: { id: 1 }
   });
 
-  const client = await getClient();
-  const raw = await client.getActivities(0, 30);
+  const raw = await connectGet<RawActivity[]>(
+    "/activitylist-service/activities/search/activities?start=0&limit=30"
+  );
 
   let imported = 0;
   const since = profile.lastGarminSyncAt?.getTime() ?? 0;
-  for (const a of raw) {
+  for (const a of raw ?? []) {
     const startIso = a.startTimeGMT ?? a.startTimeLocal;
     if (!startIso) continue;
     const started = new Date(startIso.replace(" ", "T") + "Z");

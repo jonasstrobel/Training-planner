@@ -25,6 +25,25 @@ npm run dev
 Open http://localhost:3000 and answer the intake chat to create your
 first plan.
 
+### Connecting Garmin (paste-a-token)
+
+The app never asks for your Garmin password. Instead, you copy the
+OAuth bearer token your browser already has and paste it into the app:
+
+1. Sign in to https://connect.garmin.com in your normal browser (MFA
+   runs as usual).
+2. Open DevTools → **Network** tab, filter for `connectapi`.
+3. Reload the page and click any request in the list.
+4. Under **Headers → Request Headers**, copy the value that follows
+   `Authorization: Bearer ` (a long `eyJ…` string).
+5. In the app, click **Connect Garmin** in the top bar and paste the
+   token.
+
+From then on, **Import from Garmin** pulls your latest activities and
+triggers a replan. Tokens are short-lived (~1 hour); if a sync fails
+with "token rejected", re-paste a fresh one. Tokens are stored only in
+your local SQLite DB.
+
 ### Uploading activities without Garmin credentials
 
 If you can't use the Garmin password login (e.g. enforced 2FA):
