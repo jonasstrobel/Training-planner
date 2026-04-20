@@ -25,37 +25,23 @@ npm run dev
 Open http://localhost:3000 and answer the intake chat to create your
 first plan.
 
-### Connecting Garmin (Python sidecar, MFA-friendly)
+### Connecting intervals.icu
 
-The Next.js app itself never talks to Garmin. All Garmin calls go
-through a tiny local Python service that uses
-[`python-garminconnect`](https://github.com/cyberjunky/python-garminconnect),
-which handles MFA cleanly and caches tokens for ~1 year.
+The app pulls activity data from [intervals.icu](https://intervals.icu),
+which syncs itself with Garmin (and most other sources) and exposes a
+clean personal API — no Garmin login or MFA gymnastics on our side.
 
-**One-time setup:**
+1. Sign in to intervals.icu and make sure Garmin is connected in your
+   intervals.icu settings (**Settings → Connections**).
+2. In intervals.icu: avatar (top right) → **Settings** → **Developer** →
+   copy your **API key**.
+3. In the app, click **Connect intervals.icu** in the top bar, paste
+   the key, and Save. A green dot means we've verified the key.
+4. Click **Sync intervals.icu** to pull recent activities and trigger
+   a replan. New activities write to the local DB; re-syncs deduplicate
+   by intervals.icu's activity id.
 
-```bash
-cd python-sidecar
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**Start it (leave open in a second terminal):**
-
-```bash
-cd python-sidecar
-source .venv/bin/activate
-uvicorn app:app --host 127.0.0.1 --port 7321
-```
-
-Then in the app, click **Connect Garmin** in the top bar, enter your
-email + password, enter the MFA code when prompted, and you're done.
-Tokens are saved to `python-sidecar/garmin-tokens/`; they survive
-restarts. Click **Sync Garmin** whenever you want to pull new
-activities and trigger a replan.
-
-### Uploading activities without Garmin credentials
+### Uploading activities without API access
 
 If you can't use the Garmin password login (e.g. enforced 2FA):
 

@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "@/components/ChatPanel";
 import { PlanView } from "@/components/PlanView";
 import { StatsView } from "@/components/StatsView";
-import { GarminConnectButton } from "@/components/GarminConnectButton";
-import { GarminSyncButton } from "@/components/GarminSyncButton";
+import { IntervalsConnectButton } from "@/components/IntervalsConnectButton";
+import { IntervalsSyncButton } from "@/components/IntervalsSyncButton";
 import { UploadActivitiesButton } from "@/components/UploadActivitiesButton";
 import { VersionPicker } from "@/components/VersionPicker";
 import { cn } from "@/lib/cn";
@@ -61,8 +61,8 @@ export default function HomePage() {
               onChange={setActiveVersionId}
             />
           )}
-          <GarminConnectButton />
-          <GarminSyncButton
+          <IntervalsConnectButton />
+          <IntervalsSyncButton
             planId={activePlanId}
             planVersionId={activeVersionId}
             onComplete={(newVersionId) => setActiveVersionId(newVersionId)}
